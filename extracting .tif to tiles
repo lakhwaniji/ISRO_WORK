@@ -1,0 +1,43 @@
+import os
+import math
+import rasterio
+from rasterio import windows
+from PIL import Image
+import numpy as np
+
+def create_tiles(input_tif, output_folder, tile_size=256, zoom_levels=range(0, 11)):
+    os.makedirs(output_folder, exist_ok=True)
+
+    with rasterio.open(input_tif) as dataset:
+        bounds = dataset.bounds
+        for zoom in zoom_levels:
+            print(f'Generating tiles for zoom level {zoom}...')
+            num_tiles = 2 ** zoom
+            tile_width = (bounds.right - bounds.left) / num_tiles
+            tile_height = (bounds.top - bounds.bottom) / num_tiles
+
+            for x in range(num_tiles):
+                for y in range(num_tiles):
+                    left = bounds.left + x * tile_width
+                    right = bounds.left + (x + 1) * tile_width
+                    top = bounds.top - y * tile_height
+                    bottom = bounds.top - (y + 1) * tile_height
+
+                    window = windows.from_bounds(left, bottom, right, top, transform=dataset.transform)
+                    window_transform = dataset.window_transform(window)
+
+                    data = dataset.read(window=window, out_shape=(
+                        dataset.count, tile_size, tile_size), resampling=rasterio.enums.Resampling.bilinear)
+
+                    # Normalize data to 0-255
+                    data = (data - np.min(data)) / (np.max(data) - np.min(data)) * 255
+                    data = data.astype(np.uint8)
+
+                    img = Image.fromarray(data.transpose(1, 2, 0))
+                    tile_path = os.path.join(output_folder, f'{zoom}/{x}/{y}.png')
+                    os.makedirs(os.path.dirname(tile_path), exist_ok=True)
+                    img.save(tile_path)
+
+input_tif = 'lroc_color_poles.tif'  # Replace with the path to your .tif file
+output_folder = 'output_tiles'  # Replace with the desired output directory
+create_tiles(input_tif, output_folder)
